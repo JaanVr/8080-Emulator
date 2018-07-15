@@ -102,9 +102,16 @@ class Core(object):
             self.PC+=2
         elif(self.rom[self.PC] == 0x32):
             print("STA,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
+            address = self.rom[self.PC+2]
+            address <<= 8
+            address |= self.rom[self.PC+1]
+            self.rom[address] = self.A
+            print("STA to", address)
             self.PC+=3
         elif(self.rom[self.PC] == 0x21):
             print("LXI H,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
+            self.H = self.rom[self.PC+2]
+            self.L = self.rom[self.PC+1]
             self.PC+=3
         elif(self.rom[self.PC] == 0x35):
             print("DCR M")
@@ -330,6 +337,8 @@ class Core(object):
             self.PC+=1
         elif(self.rom[self.PC] == 0x11):
             print("LXI D,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
+            self.D = self.rom[self.PC+2]
+            self.E = self.rom[self.PC+1]
             self.PC+=3
         elif(self.rom[self.PC] == 0x0E):
             print("MVI C,", hex(self.rom[self.PC+1]))
@@ -340,6 +349,8 @@ class Core(object):
             self.PC+=1
         elif(self.rom[self.PC] == 0x01):
             print("LXI B,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
+            self.B = self.rom[self.PC+2]
+            self.C = self.rom[self.PC+1]
             self.PC+=3
         elif(self.rom[self.PC] == 0xB0):
             print("ORA B")
