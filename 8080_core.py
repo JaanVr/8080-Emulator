@@ -1,13 +1,41 @@
 import binascii
 import time
+import pygame
 
-def listToByte(bitList):
-    byte = 0
-    index = 7
-    for bit in bitList:
-        byte |= bit << index
-        index -= 1
-    return byte
+class FlagRegister(object):
+    def __init__(self):
+        self.S = 0 	
+        self.Z = 0	
+        self.AC = 0	
+        self.P = 0	
+        self.CY = 0
+
+    def get(self):
+        bitList = [self.S, self.Z, 0, self.AC, 0, self.P, 1, self.CY] 
+        byte = 0
+        index = 7
+        for bit in bitList:
+            byte |= bit << index
+            index -= 1
+        return byte
+
+    def setS(byte):
+        self.S = ((byte >> 8) & 0x1)
+    
+    def setZ(byte):
+        if (byte == 0x00):
+            self.Z = 1
+        else:
+            self.Z = 0
+
+    def setAC(byte):
+        pass
+
+    def setP(byte):
+        pass
+
+    def setCY(byte):
+        pass
 
 class Core(object):
     def __init__(self):
@@ -30,21 +58,10 @@ class Core(object):
         self.L = 0
         self.PC = 0
         self.SP = 0
-        self.S = 0 	
-        self.Z = 0	
-        self.AC = 0	
-        self.P = 0	
-        self.CY = 0
+        self.F = FlagRegister()
         self.done = False
         self.INTE = 0
         self.enableInterrupts = False
-
-        #this doesnt work
-        self.F = [self.S, self.Z, 0, self.AC, 0, self.P, 1, self.CY] 
-
-        self.S = 1
-        print(hex(listToByte(self.F)))
-        self.S = 0
 
     def RST(self, ISR):
         print("INTERRUPT")
@@ -73,7 +90,7 @@ class Core(object):
             self.SP -= 1
             self.rom[self.SP] = self.A
             self.SP -= 1
-            self.rom[self.SP] = listToByte(self.F)
+            self.rom[self.SP] = self.F.get()
             self.PC+=1
         elif(self.rom[self.PC] == 0xC5):
             print("PUSH B")
@@ -115,6 +132,19 @@ class Core(object):
             self.PC+=3
         elif(self.rom[self.PC] == 0x35):
             print("DCR M")
+            address = (self.H << 8) | self.L
+            self.rom[address] -= 1
+            #underflow
+            #TODO not totally sure this is correct. prob have to set carry flag as borrow??
+            if (self.rom[address] < 0):
+                self.rom[address] = 0xFF 
+            print("DCR M", address, self.rom[address])
+
+            self.F.setS(self.rom[address])
+            self.F.setZ(self.rom[address])
+            self.F.setP(self.rom[address])
+            self.F.setAC(self.rom[address])
+
             self.PC+=1
         elif(self.rom[self.PC] == 0xCD):
             print("CALL", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
@@ -135,34 +165,81 @@ class Core(object):
             self.PC+=2
         elif(self.rom[self.PC] == 0x0F):
             print("RRC")
+            self.F.CY = self.A & 0x1
+            self.A >>= 1
+            self.A |= (self.F.CY << 8)
             self.PC+=1
         elif(self.rom[self.PC] == 0xDA):
             print("JC,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
-            self.PC+=3
+            if(self.F.CY == 1):
+                highByte = self.rom[self.PC+2]
+                lowByte = self.rom[self.PC+1]
+                self.PC = highByte
+                self.PC <<= 8
+                self.PC |= lowByte
+            else:
+                self.PC+=3
         elif(self.rom[self.PC] == 0x3A):
             print("LDA,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
+            address = self.rom[self.PC+2]
+            address <<= 8
+            address |= self.rom[self.PC+1]
+            self.A = self.rom[address]
             self.PC+=3
         elif(self.rom[self.PC] == 0xA7):
             print("ANA A")
+            self.A &= self.A
+            self.F.CY = 0
+            self.F.setZ(self.A)
+            self.F.setS(self.A)
+            self.F.setP(self.A)
+            # ANA and ANI set Auxillary Carry Flag (AC) to the OR'ing of bits 3 of the two operands.
+            self.F.setAC(self.A)
             self.PC+=1
         elif(self.rom[self.PC] == 0xCA):
             print("JZ,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
-            self.PC+=3
+            if(self.F.Z == 1):
+                highByte = self.rom[self.PC+2]
+                lowByte = self.rom[self.PC+1]
+                self.PC = highByte
+                self.PC <<= 8
+                self.PC |= lowByte
+            else:
+                self.PC+=3
         elif(self.rom[self.PC] == 0xFE):
             print("CPI,", hex(self.rom[self.PC+1]))
             self.PC+=2
         elif(self.rom[self.PC] == 0xC6):
             print("ADI,", hex(self.rom[self.PC+1]))
+            self.A += self.rom[self.PC+1]
+            #TODO not complete
+            #overflow
+            if(self.A > 0xFF):
+                self.A-=0x100
+                self.F.CY = 1
             self.PC+=2
         elif(self.rom[self.PC] == 0x27):
             print("DAA")
             self.PC+=1
         elif(self.rom[self.PC] == 0xAF):
             print("XRA A")
+            self.A ^= self.A
+            self.F.CY = 0
+            self.F.AC = 0
+            self.F.setZ(self.A)
+            self.F.setS(self.A)
+            self.F.setP(self.A)
             self.PC+=1
         elif(self.rom[self.PC] == 0xC2):
             print("JNZ,", hex(self.rom[self.PC+1]), hex(self.rom[self.PC+2]))
-            self.PC+=3
+            if(self.F.Z == 0):
+                highByte = self.rom[self.PC+2]
+                lowByte = self.rom[self.PC+1]
+                self.PC = highByte
+                self.PC <<= 8
+                self.PC |= lowByte
+            else:
+                self.PC+=3
         elif(self.rom[self.PC] == 0xE1):
             print("POP H")
             self.L = self.rom[self.SP]
@@ -549,20 +626,55 @@ class Core(object):
             self.PC+=1
         elif(self.rom[self.PC] == 0xFF):
             print("RST 7")
+            #TODO probably from the data section of invaders ROM
             self.PC+=1
         elif(self.rom[self.PC] == 0x1F):
             print("RAR")
+            lowBit = self.A & 0x1
+            self.A >>= 1
+            self.A |= (self.CY << 8)
+            self.CY = lowBit
             self.PC+=1
         else:
             print(hex(self.rom[self.PC]))
             self.PC+=1
+
+class Screen(object):
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode((256,224))
+        pygame.display.set_caption('Invaders')
+        self.pixelArray = pygame.PixelArray(self.screen)
+
+        self.white = (255,255,255)
+        self.black = (0,0,0)
+        self.blackWhite = [self.black, self.white]
+
+    def drawScreen(self, videoRam):
+        self.screen.fill(self.black)
+        index = 0x2400
+        x = 0
+        y = 0
+        while(index < 0x4000):
+            bit = 0
+            while(bit < 8):
+                self.pixelArray[x][y] = self.blackWhite[((videoRam[index] >> bit) & 0x1)] 
+                bit+=1
+                x+=1
+            if(x == 256):
+                x = 0
+                y += 1
+            index+=1
+        pygame.display.update()
 
 def drawHalfOfScreen():
     pass
 def drawSecondHalfOfScreen():
     pass
 
+
 core = Core()
+display = Screen()
 
 lastInterrupt = time.perf_counter()
 
@@ -571,6 +683,7 @@ while (core.done is not True):
     core.tick()
     #2 Mhz clock translates to 0.5 * 10^-6 seconds or half a microsecond per cycle
     if((time.perf_counter() - lastInterrupt) > (1/120)):
+        display.drawScreen(core.rom)
         if(core.INTE == 1):
             core.INTE == 0
             if(drawToEndOfScreen):
